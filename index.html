@@ -1,0 +1,2628 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>建築図面 PDF比較・変更点赤入れツール</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- PDF.js (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <!-- jsPDF (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', '"Noto Sans JP"', 'sans-serif'],
+          },
+          colors: {
+            cad: {
+              950: '#0b1120',
+              900: '#0f172a',
+              800: '#1e293b',
+              700: '#334155',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* カスタムスクロールバーと図面ワークスペース背景 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    .cad-grid-bg {
+      background-color: #e2e8f0;
+      background-image:
+        linear-gradient(to right, rgba(148, 163, 184, 0.22) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.22) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    /* タッチ操作時の不要なスクロール防止 */
+    #mainCanvas {
+      touch-action: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans h-screen w-screen overflow-hidden flex flex-col select-none">
+
+  <!-- ==================== ヘッダー ==================== -->
+  <header class="h-14 bg-slate-900 text-white border-b border-slate-700 px-3 sm:px-4 flex items-center justify-between shrink-0 z-30">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <!-- モバイル用サイドバートグル -->
+      <button id="btnToggleSidebar" class="lg:hidden p-2 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition" title="メニュー開閉">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      <!-- ロゴアイコン -->
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center shadow-sm shrink-0">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      <div class="truncate">
+        <h1 class="text-sm sm:text-base font-bold tracking-tight leading-tight truncate">建築図面 PDF比較・赤入れツール</h1>
+        <p class="text-[11px] text-slate-400 hidden sm:block">変更前図面への「変更前」表記・相違点の自動検出＆赤文字出力</p>
+      </div>
+    </div>
+
+    <!-- 右側クイックアクション -->
+    <div class="flex items-center gap-2 shrink-0">
+      <button id="btnLoadSampleHeader" class="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition">
+        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        サンプル建築図面で試す
+      </button>
+
+      <div class="h-5 w-px bg-slate-700 hidden md:block"></div>
+
+      <button id="btnExportPNG" disabled class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-white border border-slate-700 text-xs font-medium transition" title="変更前＋赤注釈をPNG画像で保存">
+        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <span class="hidden sm:inline">PNG保存</span>
+      </button>
+
+      <button id="btnExportPDF" disabled class="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold shadow-sm transition" title="変更前＋赤注釈をPDFで出力">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span>PDF出力</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== メインレイアウト ==================== -->
+  <div class="flex-1 flex min-h-0 relative overflow-hidden">
+
+    <!-- 左サイドバー（モバイル時はスライドオーバー） -->
+    <aside id="sidebar" class="w-80 sm:w-[340px] bg-white border-r border-slate-200 flex flex-col shrink-0 z-20 absolute lg:relative inset-y-0 left-0 transform -translate-x-full lg:translate-x-0 transition-transform duration-200 shadow-xl lg:shadow-none">
+
+      <!-- サイドバー上部タブ -->
+      <div class="grid grid-cols-3 border-b border-slate-200 bg-slate-50 p-1 gap-1 shrink-0">
+        <button data-stab="files" class="stab-btn py-1.5 px-2 rounded-md text-xs font-semibold bg-white text-slate-900 shadow-sm transition">
+          1. 図面読込
+        </button>
+        <button data-stab="diffs" class="stab-btn py-1.5 px-2 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1">
+          2. 相違点
+          <span id="badgeDiffCount" class="px-1.5 py-0.5 text-[10px] rounded-full bg-rose-100 text-rose-700 font-bold">0</span>
+        </button>
+        <button data-stab="settings" class="stab-btn py-1.5 px-2 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 transition">
+          3. 設定・印字
+        </button>
+      </div>
+
+      <!-- サイドバーコンテンツ領域 -->
+      <div class="flex-1 overflow-y-auto p-3.5 space-y-4">
+
+        <!-- ========== タブ1: ファイル選択 & サンプル ========== -->
+        <div id="stab-files" class="space-y-3.5">
+          <!-- サンプル読み込みカード -->
+          <div class="p-3 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-bold text-amber-300 flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  クイックデモ
+                </p>
+                <p class="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                  建築平面図（ドア移動・間仕切り追加・寸法変更・部屋名変更）のサンプルで即座に検証できます。
+                </p>
+              </div>
+            </div>
+            <button id="btnLoadSample" class="mt-2.5 w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition shadow-sm flex items-center justify-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              サンプル建築図面を読み込む
+            </button>
+          </div>
+
+          <!-- 変更前PDF (1つ目) -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <span class="w-5 h-5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-bold flex items-center justify-center">1</span>
+                変更前 PDF（ベース図面）
+              </label>
+              <span class="text-[10px] text-rose-600 font-medium bg-rose-50 px-1.5 py-0.5 rounded">「変更前」を記載</span>
+            </div>
+            <div id="dropZoneA" class="border-2 border-dashed border-slate-300 hover:border-rose-400 hover:bg-rose-50/40 rounded-xl p-4 text-center cursor-pointer transition group">
+              <input id="fileInputA" type="file" accept="application/pdf,.pdf" class="hidden" />
+              <svg class="w-7 h-7 mx-auto text-slate-400 group-hover:text-rose-500 transition mb-1.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <p id="fileNameA" class="text-xs font-semibold text-slate-700 truncate">クリック または PDFをドロップ</p>
+              <p id="fileMetaA" class="text-[11px] text-slate-400 mt-0.5">1つ目の建築図面PDFを選択</p>
+            </div>
+          </div>
+
+          <!-- 変更後PDF (2つ目) -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <span class="w-5 h-5 rounded-full bg-sky-100 text-sky-700 text-[11px] font-bold flex items-center justify-center">2</span>
+                変更後 PDF（比較対象）
+              </label>
+              <span class="text-[10px] text-sky-600 font-medium bg-sky-50 px-1.5 py-0.5 rounded">差分を比較</span>
+            </div>
+            <div id="dropZoneB" class="border-2 border-dashed border-slate-300 hover:border-sky-400 hover:bg-sky-50/40 rounded-xl p-4 text-center cursor-pointer transition group">
+              <input id="fileInputB" type="file" accept="application/pdf,.pdf" class="hidden" />
+              <svg class="w-7 h-7 mx-auto text-slate-400 group-hover:text-sky-500 transition mb-1.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <p id="fileNameB" class="text-xs font-semibold text-slate-700 truncate">クリック または PDFをドロップ</p>
+              <p id="fileMetaB" class="text-[11px] text-slate-400 mt-0.5">2つ目の建築図面PDFを選択</p>
+            </div>
+          </div>
+
+          <!-- 複数ページコントロール -->
+          <div id="pageControlBox" class="hidden p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-slate-700">ページ切替</span>
+              <span id="pageIndicator" class="text-xs font-semibold text-slate-600">1 / 1 ページ</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btnPrevPage" class="flex-1 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 text-xs font-semibold transition">前ページ</button>
+              <button id="btnNextPage" class="flex-1 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 text-xs font-semibold transition">次ページ</button>
+            </div>
+          </div>
+
+          <!-- 比較実行ボタン -->
+          <button id="btnRunCompare" disabled class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold transition shadow-sm flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            差分を再検出する
+          </button>
+
+          <!-- 使い方ガイド -->
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 space-y-1.5 leading-relaxed">
+            <p class="font-bold text-slate-700">操作のポイント</p>
+            <p>• 1つ目の図面の右上に自動で<span class="text-rose-600 font-bold">「変更前」</span>が配置されます（ドラッグで移動可能）。</p>
+            <p>• 自動検出された相違点の<span class="text-rose-600 font-bold">赤文字・赤枠</span>は、ドラッグ移動やテキスト編集ができます。</p>
+            <p>• ツールバーから手動で赤文字や赤枠を追加することも可能です。</p>
+          </div>
+        </div>
+
+        <!-- ========== タブ2: 検出された相違点リスト ========== -->
+        <div id="stab-diffs" class="hidden space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-xs font-bold text-slate-800">相違点・赤文字注釈リスト</h2>
+              <p class="text-[11px] text-slate-500">クリックで該当箇所へフォーカスします</p>
+            </div>
+            <button id="btnClearAuto" class="text-[11px] text-slate-500 hover:text-rose-600 font-medium px-2 py-1 rounded hover:bg-rose-50 transition" title="すべて削除">
+              全クリア
+            </button>
+          </div>
+
+          <!-- 一括スタイル設定 -->
+          <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
+            <span class="text-[11px] font-semibold text-slate-700">赤枠スタイル</span>
+            <select id="selectMarkStyle" class="text-xs bg-white border border-slate-300 rounded-lg px-2 py-1 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500">
+              <option value="cloud">建築雲マーク（赤）</option>
+              <option value="dashed">破線枠（赤）</option>
+              <option value="solid">実線枠（赤）</option>
+            </select>
+          </div>
+
+          <!-- リスト本体 -->
+          <div id="diffListContainer" class="space-y-2.5">
+            <div class="text-center py-8 px-4 rounded-xl border border-dashed border-slate-300 text-slate-400 text-xs">
+              図面を読み込むと、検出された変更箇所がここに一覧表示されます。
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== タブ3: 比較設定 & 右上「変更前」スタンプ設定 ========== -->
+        <div id="stab-settings" class="hidden space-y-4">
+
+          <!-- 右上「変更前」スタンプ設定 -->
+          <div class="p-3.5 rounded-xl bg-rose-50/50 border border-rose-200/80 space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rose-600"></span>
+                図枠右上「変更前」表記設定
+              </h3>
+              <label class="inline-flex items-center cursor-pointer">
+                <input id="chkStampEnabled" type="checkbox" checked class="sr-only peer" />
+                <div class="w-8 h-4.5 bg-slate-300 peer-checked:bg-rose-600 rounded-full relative transition after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:after:translate-x-3.5"></div>
+              </label>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-700 mb-1">表示テキスト</label>
+              <input id="inputStampText" type="text" value="変更前" class="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 font-bold text-rose-700" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                  <span>右余白 (X)</span>
+                  <span id="valStampRight" class="font-mono text-slate-800">48px</span>
+                </label>
+                <input id="rangeStampRight" type="range" min="10" max="400" value="48" class="w-full accent-rose-600" />
+              </div>
+              <div>
+                <label class="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                  <span>上余白 (Y)</span>
+                  <span id="valStampTop" class="font-mono text-slate-800">38px</span>
+                </label>
+                <input id="rangeStampTop" type="range" min="10" max="300" value="38" class="w-full accent-rose-600" />
+              </div>
+            </div>
+
+            <div>
+              <label class="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                <span>文字サイズ</span>
+                <span id="valStampSize" class="font-mono text-slate-800">36px</span>
+              </label>
+              <input id="rangeStampSize" type="range" min="16" max="80" value="36" class="w-full accent-rose-600" />
+            </div>
+
+            <div class="flex items-center gap-4 pt-1">
+              <label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                <input id="chkStampBorder" type="checkbox" checked class="rounded text-rose-600 focus:ring-rose-500" />
+                赤枠線あり
+              </label>
+              <label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                <input id="chkStampBg" type="checkbox" checked class="rounded text-rose-600 focus:ring-rose-500" />
+                白背景塗り
+              </label>
+            </div>
+            <p class="text-[10px] text-rose-700/80">※ キャンバス上で「変更前」を直接ドラッグして位置調整も可能です。</p>
+          </div>
+
+          <!-- 差分検出エンジン設定 -->
+          <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              差分検出エンジン設定
+            </h3>
+
+            <div>
+              <label class="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                <span>検出感度（しきい値）</span>
+                <span id="valThreshold" class="font-mono text-slate-800">40</span>
+              </label>
+              <input id="rangeThreshold" type="range" min="10" max="150" value="40" class="w-full accent-slate-800" />
+              <div class="flex justify-between text-[10px] text-slate-400">
+                <span>高感度（細かい差）</span>
+                <span>低感度（大きな差）</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                <span>グループ化距離</span>
+                <span id="valCluster" class="font-mono text-slate-800">45px</span>
+              </label>
+              <input id="rangeCluster" type="range" min="10" max="160" value="45" class="w-full accent-slate-800" />
+              <p class="text-[10px] text-slate-400">近い変更点を1つのエリアにまとめる距離</p>
+            </div>
+
+            <div>
+              <label class="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                <span>ノイズ除去（最小差分画素数）</span>
+                <span id="valMinPixels" class="font-mono text-slate-800">25</span>
+              </label>
+              <input id="rangeMinPixels" type="range" min="5" max="300" value="25" class="w-full accent-slate-800" />
+              <p class="text-[10px] text-slate-400">スキャン時のゴミや微細なズレを無視します</p>
+            </div>
+
+            <!-- 位置ズレ補正 -->
+            <div class="pt-2 border-t border-slate-200 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold text-slate-700">位置ズレ補正（変更後図面）</span>
+                <button id="btnResetOffset" class="text-[10px] text-sky-600 hover:underline font-medium">リセット</button>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                    <span>Xオフセット</span>
+                    <span id="valOffsetX" class="font-mono">0px</span>
+                  </label>
+                  <input id="rangeOffsetX" type="range" min="-40" max="40" value="0" class="w-full accent-sky-600" />
+                </div>
+                <div>
+                  <label class="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                    <span>Yオフセット</span>
+                    <span id="valOffsetY" class="font-mono">0px</span>
+                  </label>
+                  <input id="rangeOffsetY" type="range" min="-40" max="40" value="0" class="w-full accent-sky-600" />
+                </div>
+              </div>
+            </div>
+
+            <button id="btnApplyDiffSettings" class="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition">
+              この設定で差分を再検出
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- モバイル用背景オーバーレイ -->
+    <div id="sidebarBackdrop" class="hidden fixed inset-0 bg-slate-900/50 z-10 lg:hidden"></div>
+
+    <!-- ==================== メインワークスペース ==================== -->
+    <main class="flex-1 flex flex-col min-w-0 bg-slate-200 overflow-hidden">
+
+      <!-- 上部ツールバー -->
+      <div class="bg-white border-b border-slate-200 px-3 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 z-10 shadow-sm">
+
+        <!-- 4つの表示モードタブ -->
+        <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 overflow-x-auto max-w-full">
+          <button data-mode="preview" class="mode-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-rose-700 shadow-sm whitespace-nowrap transition">
+            変更前＋赤注釈
+          </button>
+          <button data-mode="overlay" class="mode-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap transition">
+            差分重ね合わせ
+          </button>
+          <button data-mode="slider" class="mode-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap transition">
+            スライダー比較
+          </button>
+          <button data-mode="sideBySide" class="mode-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap transition">
+            左右並列表示
+          </button>
+        </div>
+
+        <!-- ツール切替 & ズームコントロール -->
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <!-- インタラクションツール -->
+          <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+            <button data-tool="select" class="tool-btn p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-900 shadow-sm flex items-center gap-1 transition" title="選択・移動ツール（注釈やスタンプをドラッグ）">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
+              </svg>
+              <span class="hidden xl:inline">選択/移動</span>
+            </button>
+            <button data-tool="addText" class="tool-btn p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-rose-700 flex items-center gap-1 transition" title="クリックした場所に赤文字を追加">
+              <svg class="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              <span class="hidden xl:inline">赤文字追加</span>
+            </button>
+            <button data-tool="addBox" class="tool-btn p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-rose-700 flex items-center gap-1 transition" title="ドラッグで赤枠＋赤文字を追加">
+              <svg class="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 010 2H6v3a1 1 0 01-2 0V5zm16 0a1 1 0 00-1-1h-4a1 1 0 100 2h3v3a1 1 0 102 0V5zM4 19a1 1 0 001 1h4a1 1 0 100-2H6v-3a1 1 0 10-2 0v4zm16 0a1 1 0 01-1 1h-4a1 1 0 110-2h3v-3a1 1 0 112 0v4z" />
+              </svg>
+              <span class="hidden xl:inline">赤枠追加</span>
+            </button>
+          </div>
+
+          <!-- ズーム操作 -->
+          <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+            <button id="btnZoomOut" class="p-1.5 rounded-lg hover:bg-white text-slate-700 transition" title="縮小">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" />
+              </svg>
+            </button>
+            <span id="zoomLabel" class="px-2 text-xs font-mono font-semibold text-slate-700 min-w-[52px] text-center">100%</span>
+            <button id="btnZoomIn" class="p-1.5 rounded-lg hover:bg-white text-slate-700 transition" title="拡大">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <button id="btnZoomFit" class="px-2 py-1.5 rounded-lg hover:bg-white text-xs font-semibold text-slate-700 transition ml-0.5" title="画面にフィット">
+              全体
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- キャンバスエリア -->
+      <div id="canvasContainer" class="flex-1 relative cad-grid-bg overflow-hidden">
+        <canvas id="mainCanvas" class="w-full h-full block"></canvas>
+
+        <!-- 初期エンプティステート -->
+        <div id="emptyState" class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+          <div class="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full text-center pointer-events-auto">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mb-4">
+              <svg class="w-8 h-8 text-rose-600" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+            </div>
+            <h2 class="text-base sm:text-lg font-bold text-slate-900">建築図面PDFを比較しましょう</h2>
+            <p class="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+              左パネルから「変更前PDF」と「変更後PDF」をアップロードするか、下のボタンでサンプル建築平面図を読み込んで動作を体験できます。
+            </p>
+            <div class="mt-5 flex flex-col sm:flex-row gap-2.5 justify-center">
+              <button id="btnLoadSampleEmpty" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-bold shadow-sm transition flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                サンプル建築図面を読み込む
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 差分重ね合わせモード用の凡例バッジ -->
+        <div id="overlayLegend" class="hidden absolute top-3 left-3 bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-md px-3 py-2 flex items-center gap-3 text-xs font-semibold">
+          <span class="flex items-center gap-1.5 text-rose-600"><span class="w-3 h-3 rounded-sm bg-rose-500 inline-block"></span>変更前のみ</span>
+          <span class="flex items-center gap-1.5 text-blue-600"><span class="w-3 h-3 rounded-sm bg-blue-500 inline-block"></span>変更後のみ</span>
+          <span class="flex items-center gap-1.5 text-slate-500"><span class="w-3 h-3 rounded-sm bg-slate-300 inline-block"></span>共通部分</span>
+        </div>
+
+        <!-- ツールモードヒントバー -->
+        <div id="toolHintBar" class="hidden absolute top-3 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-xs font-semibold px-4 py-1.5 rounded-full shadow-lg flex items-center gap-2">
+          <span id="toolHintText">図面上の任意の場所をクリックして赤文字を追加</span>
+          <button id="btnCancelTool" class="ml-1 px-1.5 py-0.5 rounded bg-rose-700 hover:bg-rose-800 text-[10px]">終了</button>
+        </div>
+
+        <!-- ローディングオーバーレイ -->
+        <div id="loadingOverlay" class="hidden absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center z-30">
+          <div class="bg-white rounded-2xl shadow-xl px-6 py-4 flex items-center gap-3">
+            <div class="w-5 h-5 border-2 border-rose-600 border-t-transparent rounded-full animate-spin"></div>
+            <span id="loadingText" class="text-xs sm:text-sm font-bold text-slate-800">図面を解析しています...</span>
+          </div>
+        </div>
+
+        <!-- 下部ステータスバー -->
+        <div class="absolute bottom-3 left-3 right-3 pointer-events-none flex items-center justify-between text-[11px] text-slate-600">
+          <div class="bg-white/90 backdrop-blur px-3 py-1 rounded-lg border border-slate-200/80 shadow-sm pointer-events-auto hidden sm:flex items-center gap-3">
+            <span id="statusDim">図面サイズ: --</span>
+            <span class="text-slate-300">|</span>
+            <span>ホイール: 拡大縮小 / ドラッグ: 移動 / ダブルクリック: 赤文字編集</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ==================== テキスト編集モーダル ==================== -->
+  <div id="editModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-[1px] z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
+          赤文字注釈の編集
+        </h3>
+        <button id="btnCloseEditModal" class="text-slate-400 hover:text-slate-700">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">記載テキスト（赤文字）</label>
+          <input id="modalInputText" type="text" class="w-full px-3 py-2 text-sm font-bold text-rose-700 bg-rose-50/40 border border-rose-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="例：扉位置変更、W=1800→2000" />
+        </div>
+        <div>
+          <label class="flex justify-between text-xs font-medium text-slate-600 mb-1">
+            <span>文字サイズ</span>
+            <span id="modalValFontSize" class="font-mono">24px</span>
+          </label>
+          <input id="modalRangeFontSize" type="range" min="14" max="60" value="24" class="w-full accent-rose-600" />
+        </div>
+        <div class="flex items-center gap-4">
+          <label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+            <input id="modalChkBox" type="checkbox" checked class="rounded text-rose-600" />
+            赤枠を表示
+          </label>
+          <label class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+            <input id="modalChkLeader" type="checkbox" checked class="rounded text-rose-600" />
+            引出線を表示
+          </label>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+        <button id="btnDeleteInModal" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 transition">削除</button>
+        <div class="flex gap-2">
+          <button id="btnCancelEditModal" class="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition">キャンセル</button>
+          <button id="btnSaveEditModal" class="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition">反映</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== トースト通知コンテナ ==================== -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script>
+    /**
+     * =========================================================================
+     * 建築図面 PDF比較・変更点赤入れツール メインロジック
+     * =========================================================================
+     */
+
+    // PDF.js ワーカー設定
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    // アプリケーション全体の状態管理
+    const state = {
+      isLoaded: false,
+      isSample: false,
+      pdfDocA: null,
+      pdfDocB: null,
+      fileNameA: '',
+      fileNameB: '',
+      pageNum: 1,
+      maxPages: 1,
+
+      // オフスクリーン図面キャンバス
+      canvasA: null,           // 変更前（1つ目）
+      canvasB: null,           // 変更後（2つ目）
+      canvasOverlayDiff: null, // 差分重ね合わせ（共通=灰, 前のみ=赤, 後のみ=青）
+      docWidth: 0,
+      docHeight: 0,
+
+      // 差分検出パラメータ
+      diff: {
+        threshold: 40,
+        clusterRadius: 45,
+        minPixels: 25,
+        offsetX: 0,
+        offsetY: 0,
+        markStyle: 'cloud', // 'cloud' | 'dashed' | 'solid'
+      },
+
+      // 要件②: 変更前図面の図枠右上に配置する「変更前」スタンプ
+      stamp: {
+        enabled: true,
+        text: '変更前',
+        marginRight: 48,
+        marginTop: 38,
+        fontSize: 36,
+        hasBorder: true,
+        bgFill: true,
+      },
+
+      // 相違点・赤文字注釈リスト
+      annotations: [],
+      nextAnnotationNum: 1,
+
+      // ビューア状態
+      view: {
+        mode: 'preview', // 'preview' | 'overlay' | 'slider' | 'sideBySide'
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        sliderPos: 0.5,
+        tool: 'select',  // 'select' | 'addText' | 'addBox'
+        selectedId: null, // null | 'stamp' | annotation.id
+      },
+
+      // ドラッグ操作用の一時状態
+      drag: {
+        active: false,
+        type: null, // 'pan' | 'stamp' | 'label' | 'box' | 'slider' | 'drawBox'
+        targetId: null,
+        startScreenX: 0,
+        startScreenY: 0,
+        startDocX: 0,
+        startDocY: 0,
+        origX: 0,
+        origY: 0,
+        currentDocX: 0,
+        currentDocY: 0,
+      },
+      editingAnnotationId: null,
+    };
+
+    // DOM要素キャッシュ
+    const el = {
+      sidebar: document.getElementById('sidebar'),
+      sidebarBackdrop: document.getElementById('sidebarBackdrop'),
+      btnToggleSidebar: document.getElementById('btnToggleSidebar'),
+      canvasContainer: document.getElementById('canvasContainer'),
+      mainCanvas: document.getElementById('mainCanvas'),
+      emptyState: document.getElementById('emptyState'),
+      loadingOverlay: document.getElementById('loadingOverlay'),
+      loadingText: document.getElementById('loadingText'),
+      overlayLegend: document.getElementById('overlayLegend'),
+      toolHintBar: document.getElementById('toolHintBar'),
+      toolHintText: document.getElementById('toolHintText'),
+      statusDim: document.getElementById('statusDim'),
+      zoomLabel: document.getElementById('zoomLabel'),
+      badgeDiffCount: document.getElementById('badgeDiffCount'),
+      diffListContainer: document.getElementById('diffListContainer'),
+
+      // ファイル入力
+      dropZoneA: document.getElementById('dropZoneA'),
+      dropZoneB: document.getElementById('dropZoneB'),
+      fileInputA: document.getElementById('fileInputA'),
+      fileInputB: document.getElementById('fileInputB'),
+      fileNameA: document.getElementById('fileNameA'),
+      fileNameB: document.getElementById('fileNameB'),
+      fileMetaA: document.getElementById('fileMetaA'),
+      fileMetaB: document.getElementById('fileMetaB'),
+      pageControlBox: document.getElementById('pageControlBox'),
+      pageIndicator: document.getElementById('pageIndicator'),
+      btnPrevPage: document.getElementById('btnPrevPage'),
+      btnNextPage: document.getElementById('btnNextPage'),
+
+      // ボタン類
+      btnLoadSample: document.getElementById('btnLoadSample'),
+      btnLoadSampleHeader: document.getElementById('btnLoadSampleHeader'),
+      btnLoadSampleEmpty: document.getElementById('btnLoadSampleEmpty'),
+      btnRunCompare: document.getElementById('btnRunCompare'),
+      btnExportPNG: document.getElementById('btnExportPNG'),
+      btnExportPDF: document.getElementById('btnExportPDF'),
+      btnZoomIn: document.getElementById('btnZoomIn'),
+      btnZoomOut: document.getElementById('btnZoomOut'),
+      btnZoomFit: document.getElementById('btnZoomFit'),
+      btnCancelTool: document.getElementById('btnCancelTool'),
+      btnClearAuto: document.getElementById('btnClearAuto'),
+
+      // 設定コントロール
+      selectMarkStyle: document.getElementById('selectMarkStyle'),
+      chkStampEnabled: document.getElementById('chkStampEnabled'),
+      inputStampText: document.getElementById('inputStampText'),
+      rangeStampRight: document.getElementById('rangeStampRight'),
+      rangeStampTop: document.getElementById('rangeStampTop'),
+      rangeStampSize: document.getElementById('rangeStampSize'),
+      valStampRight: document.getElementById('valStampRight'),
+      valStampTop: document.getElementById('valStampTop'),
+      valStampSize: document.getElementById('valStampSize'),
+      chkStampBorder: document.getElementById('chkStampBorder'),
+      chkStampBg: document.getElementById('chkStampBg'),
+
+      rangeThreshold: document.getElementById('rangeThreshold'),
+      rangeCluster: document.getElementById('rangeCluster'),
+      rangeMinPixels: document.getElementById('rangeMinPixels'),
+      rangeOffsetX: document.getElementById('rangeOffsetX'),
+      rangeOffsetY: document.getElementById('rangeOffsetY'),
+      valThreshold: document.getElementById('valThreshold'),
+      valCluster: document.getElementById('valCluster'),
+      valMinPixels: document.getElementById('valMinPixels'),
+      valOffsetX: document.getElementById('valOffsetX'),
+      valOffsetY: document.getElementById('valOffsetY'),
+      btnResetOffset: document.getElementById('btnResetOffset'),
+      btnApplyDiffSettings: document.getElementById('btnApplyDiffSettings'),
+
+      // 編集モーダル
+      editModal: document.getElementById('editModal'),
+      modalInputText: document.getElementById('modalInputText'),
+      modalRangeFontSize: document.getElementById('modalRangeFontSize'),
+      modalValFontSize: document.getElementById('modalValFontSize'),
+      modalChkBox: document.getElementById('modalChkBox'),
+      modalChkLeader: document.getElementById('modalChkLeader'),
+      btnCloseEditModal: document.getElementById('btnCloseEditModal'),
+      btnCancelEditModal: document.getElementById('btnCancelEditModal'),
+      btnSaveEditModal: document.getElementById('btnSaveEditModal'),
+      btnDeleteInModal: document.getElementById('btnDeleteInModal'),
+    };
+
+    const ctx = el.mainCanvas.getContext('2d');
+
+    // =========================================================================
+    // ユーティリティ（トースト通知・ローディング）
+    // =========================================================================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const colors = {
+        info: 'bg-slate-900 text-white border-slate-700',
+        success: 'bg-emerald-700 text-white border-emerald-600',
+        error: 'bg-rose-700 text-white border-rose-600',
+        warning: 'bg-amber-600 text-white border-amber-500',
+      };
+      toast.className = `pointer-events-auto px-4 py-2.5 rounded-xl border shadow-lg text-xs font-semibold flex items-center gap-2 transition-all duration-300 translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3200);
+    }
+
+    function setLoading(show, text = '処理中...') {
+      el.loadingText.textContent = text;
+      el.loadingOverlay.classList.toggle('hidden', !show);
+    }
+
+    // =========================================================================
+    // サンプル建築平面図の動的生成（変更前・変更後）
+    // =========================================================================
+    function createArchitecturalSample(isAfter) {
+      const W = 1600;
+      const H = 1131; // A3横比率
+      const c = document.createElement('canvas');
+      c.width = W;
+      c.height = H;
+      const g = c.getContext('2d');
+
+      // 白背景
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 0, W, H);
+
+      // 図枠（外枠・内枠）
+      g.strokeStyle = '#1e293b';
+      g.lineWidth = 3;
+      g.strokeRect(24, 24, W - 48, H - 48);
+      g.lineWidth = 1.5;
+      g.strokeRect(32, 32, W - 64, H - 64);
+
+      // 表題欄（右下）
+      const tbX = W - 440, tbY = H - 152, tbW = 408, tbH = 120;
+      g.fillStyle = '#ffffff';
+      g.fillRect(tbX, tbY, tbW, tbH);
+      g.strokeStyle = '#1e293b';
+      g.lineWidth = 2;
+      g.strokeRect(tbX, tbY, tbW, tbH);
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(tbX, tbY + 40); g.lineTo(tbX + tbW, tbY + 40);
+      g.moveTo(tbX, tbY + 80); g.lineTo(tbX + tbW, tbY + 80);
+      g.moveTo(tbX + 100, tbY); g.lineTo(tbX + 100, tbY + tbH);
+      g.moveTo(tbX + 280, tbY + 80); g.lineTo(tbX + 280, tbY + tbH);
+      g.stroke();
+
+      g.fillStyle = '#1e293b';
+      g.font = '600 14px "Noto Sans JP", sans-serif';
+      g.fillText('工事名称', tbX + 16, tbY + 25);
+      g.fillText('図面名称', tbX + 16, tbY + 65);
+      g.fillText('縮　　尺', tbX + 16, tbY + 105);
+      g.font = '700 16px "Noto Sans JP", sans-serif';
+      g.fillText('港南レジデンス新築工事', tbX + 115, tbY + 26);
+      g.fillText('1階 平面図', tbX + 115, tbY + 66);
+      g.font = '600 15px "Inter", sans-serif';
+      g.fillText('S = 1 / 100', tbX + 115, tbY + 105);
+      g.fillText('A - 01', tbX + 315, tbY + 105);
+
+      // 方位記号（左上付近）
+      g.save();
+      g.translate(115, 115);
+      g.strokeStyle = '#334155';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.arc(0, 0, 26, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(0, -24); g.lineTo(-9, 12); g.lineTo(0, 4); g.lineTo(9, 12); g.closePath();
+      g.fillStyle = '#334155';
+      g.fill();
+      g.font = '700 14px "Inter", sans-serif';
+      g.textAlign = 'center';
+      g.fillText('N', 0, -32);
+      g.restore();
+
+      // 通り芯座標
+      const xs = [260, 620, 980, 1340]; // X1, X2, X3, X4
+      const ys = [230, 560, 860];       // Y3, Y2, Y1
+
+      // 通り芯描画（一点鎖線）
+      g.save();
+      g.strokeStyle = '#94a3b8';
+      g.lineWidth = 1;
+      g.setLineDash([16, 6, 3, 6]);
+      xs.forEach((x, idx) => {
+        g.beginPath();
+        g.moveTo(x, 145);
+        g.lineTo(x, 945);
+        g.stroke();
+      });
+      ys.forEach((y, idx) => {
+        g.beginPath();
+        g.moveTo(155, y);
+        g.lineTo(1430, y);
+        g.stroke();
+      });
+      g.restore();
+
+      // 通り芯丸記号
+      const xLabels = ['X1', 'X2', 'X3', 'X4'];
+      const yLabels = ['Y3', 'Y2', 'Y1'];
+      g.strokeStyle = '#334155';
+      g.fillStyle = '#ffffff';
+      g.lineWidth = 1.5;
+      g.font = '700 14px "Inter", sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+
+      xs.forEach((x, i) => {
+        g.beginPath(); g.arc(x, 125, 18, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.fillStyle = '#1e293b'; g.fillText(xLabels[i], x, 126); g.fillStyle = '#ffffff';
+      });
+      ys.forEach((y, i) => {
+        g.beginPath(); g.arc(135, y, 18, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.fillStyle = '#1e293b'; g.fillText(yLabels[i], 135, y + 1); g.fillStyle = '#ffffff';
+      });
+
+      // 寸法線描画ヘルパー
+      function drawDimH(x1, x2, y, label) {
+        g.strokeStyle = '#475569';
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(x1, y); g.lineTo(x2, y);
+        g.moveTo(x1, y - 6); g.lineTo(x1, y + 6);
+        g.moveTo(x2, y - 6); g.lineTo(x2, y + 6);
+        g.stroke();
+        g.fillStyle = '#ffffff';
+        g.fillRect((x1 + x2) / 2 - 36, y - 10, 72, 20);
+        g.fillStyle = '#1e293b';
+        g.font = '600 15px "Inter", sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(label, (x1 + x2) / 2, y);
+      }
+      function drawDimV(y1, y2, x, label) {
+        g.strokeStyle = '#475569';
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(x, y1); g.lineTo(x, y2);
+        g.moveTo(x - 6, y1); g.lineTo(x + 6, y1);
+        g.moveTo(x - 6, y2); g.lineTo(x + 6, y2);
+        g.stroke();
+        g.save();
+        g.translate(x, (y1 + y2) / 2);
+        g.rotate(-Math.PI / 2);
+        g.fillStyle = '#ffffff';
+        g.fillRect(-34, -10, 68, 20);
+        g.fillStyle = '#1e293b';
+        g.font = '600 15px "Inter", sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(label, 0, 0);
+        g.restore();
+      }
+
+      // 上部寸法線（★変更箇所1: X2-X3の寸法値を 3,640 → 4,000 に変更）
+      drawDimH(xs[0], xs[1], 178, '3,640');
+      drawDimH(xs[1], xs[2], 178, isAfter ? '4,000' : '3,640');
+      drawDimH(xs[2], xs[3], 178, '3,640');
+      // 左側寸法線
+      drawDimV(ys[0], ys[1], 195, '3,640');
+      drawDimV(ys[1], ys[2], 195, '3,185');
+
+      // 壁描画ヘルパー（建築二重線＋グレー中塗り）
+      function drawWall(x1, y1, x2, y2, thickness = 14) {
+        g.save();
+        g.strokeStyle = '#0f172a';
+        g.fillStyle = '#cbd5e1';
+        g.lineWidth = 2;
+        if (Math.abs(y1 - y2) < 1) {
+          const left = Math.min(x1, x2);
+          const w = Math.abs(x2 - x1);
+          g.fillRect(left, y1 - thickness / 2, w, thickness);
+          g.strokeRect(left, y1 - thickness / 2, w, thickness);
+        } else {
+          const top = Math.min(y1, y2);
+          const h = Math.abs(y2 - y1);
+          g.fillRect(x1 - thickness / 2, top, thickness, h);
+          g.strokeRect(x1 - thickness / 2, top, thickness, h);
+        }
+        g.restore();
+      }
+
+      // 窓描画ヘルパー
+      function drawWindowH(x1, x2, y) {
+        g.fillStyle = '#ffffff';
+        g.fillRect(x1, y - 7, x2 - x1, 14);
+        g.strokeStyle = '#0f172a';
+        g.lineWidth = 1.8;
+        g.strokeRect(x1, y - 7, x2 - x1, 14);
+        g.beginPath();
+        g.moveTo(x1, y - 2); g.lineTo(x2, y - 2);
+        g.moveTo(x1, y + 2); g.lineTo(x2, y + 2);
+        g.stroke();
+      }
+
+      // 開き戸描画ヘルパー
+      function drawDoorH(hingeX, y, width, openDown = true, openRight = true) {
+        // 壁の開口を白抜き
+        const left = openRight ? hingeX : hingeX - width;
+        g.fillStyle = '#ffffff';
+        g.fillRect(left, y - 9, width, 18);
+
+        g.strokeStyle = '#0f172a';
+        g.lineWidth = 2;
+        const dirY = openDown ? 1 : -1;
+        g.beginPath();
+        g.moveTo(hingeX, y);
+        g.lineTo(hingeX, y + dirY * width);
+        g.stroke();
+
+        // 扉軌跡の円弧
+        g.lineWidth = 1.2;
+        g.beginPath();
+        if (openDown && openRight) {
+          g.arc(hingeX, y, width, 0, Math.PI / 2);
+        } else if (openDown && !openRight) {
+          g.arc(hingeX, y, width, Math.PI / 2, Math.PI);
+        } else if (!openDown && openRight) {
+          g.arc(hingeX, y, width, -Math.PI / 2, 0);
+        } else {
+          g.arc(hingeX, y, width, Math.PI, Math.PI * 1.5);
+        }
+        g.stroke();
+      }
+
+      // 外壁
+      drawWall(xs[0], ys[0], xs[3], ys[0], 16); // 北
+      drawWall(xs[0], ys[2], xs[3], ys[2], 16); // 南
+      drawWall(xs[0], ys[0], xs[0], ys[2], 16); // 西
+      drawWall(xs[3], ys[0], xs[3], ys[2], 16); // 東
+
+      // 内壁
+      drawWall(xs[1], ys[0], xs[1], ys[2], 12); // X2縦壁
+      drawWall(xs[2], ys[0], xs[2], ys[1], 12); // X3北側縦壁
+      drawWall(xs[0], ys[1], xs[2], ys[1], 12); // Y2横壁（西〜中）
+
+      // ★変更箇所2: LDK東側（X3付近）にワークスペース用の間仕切り壁を追加
+      if (isAfter) {
+        drawWall(xs[2] + 150, ys[1] + 40, xs[3], ys[1] + 40, 12);
+        drawWall(xs[2] + 150, ys[1] + 40, xs[2] + 150, ys[1] + 185, 12);
+      }
+
+      // 窓の配置
+      drawWindowH(340, 520, ys[0]);  // 洋室1北窓
+      drawWindowH(700, 880, ys[0]);  // 浴室・洗面北窓
+      drawWindowH(1060, 1260, ys[0]); // キッチン北窓
+      drawWindowH(340, 530, ys[2]);  // 和室/洋室2南窓
+      // ★変更箇所3: 南側LDKの掃き出し窓を拡大（変更前: 820-1120 → 変更後: 760-1240）
+      if (isAfter) {
+        drawWindowH(760, 1240, ys[2]);
+      } else {
+        drawWindowH(820, 1120, ys[2]);
+      }
+
+      // ★変更箇所4: 洋室1（左上）のドア位置を変更
+      if (isAfter) {
+        drawDoorH(480, ys[1], 76, false, true);
+      } else {
+        drawDoorH(330, ys[1], 76, false, true);
+      }
+
+      // 玄関ドア（南側X2付近）
+      drawDoorH(650, ys[2], 82, false, true);
+
+      // システムキッチン（北東）
+      g.strokeStyle = '#334155';
+      g.lineWidth = 1.5;
+      g.strokeRect(1010, 260, 290, 62);
+      // シンク
+      g.strokeRect(1035, 272, 70, 38);
+      // コンロ
+      g.beginPath();
+      g.arc(1220, 284, 10, 0, Math.PI * 2);
+      g.arc(1252, 284, 10, 0, Math.PI * 2);
+      g.arc(1236, 304, 8, 0, Math.PI * 2);
+      g.stroke();
+
+      // ユニットバス（中央上）
+      g.strokeRect(650, 255, 160, 115);
+      g.strokeRect(665, 270, 130, 85);
+
+      // 階段（中央）
+      for (let i = 0; i < 8; i++) {
+        g.strokeRect(830, 260 + i * 26, 125, 26);
+      }
+      g.beginPath();
+      g.moveTo(892, 468); g.lineTo(892, 278);
+      g.lineTo(882, 292); g.moveTo(892, 278); g.lineTo(902, 292);
+      g.stroke();
+
+      // ★変更箇所5: 南西の部屋を「和室 6.0帖（畳割りあり）」→「洋室2 6.0帖（フローリング）」へ変更
+      if (!isAfter) {
+        // 畳の線
+        g.strokeStyle = '#94a3b8';
+        g.lineWidth = 1;
+        g.strokeRect(290, 590, 300, 240);
+        g.beginPath();
+        g.moveTo(390, 590); g.lineTo(390, 830);
+        g.moveTo(490, 590); g.lineTo(490, 830);
+        g.moveTo(290, 710); g.lineTo(590, 710);
+        g.stroke();
+      }
+
+      // 部屋名テキスト
+      g.fillStyle = '#0f172a';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+
+      g.font = '700 24px "Noto Sans JP", sans-serif';
+      g.fillText('洋室 1', 440, 385);
+      g.font = '500 15px "Noto Sans JP", sans-serif';
+      g.fillText('7.5帖', 440, 415);
+
+      g.font = '700 24px "Noto Sans JP", sans-serif';
+      g.fillText(isAfter ? '洋室 2' : '和室', 440, 695);
+      g.font = '500 15px "Noto Sans JP", sans-serif';
+      g.fillText('6.0帖', 440, 725);
+
+      g.font = '700 28px "Noto Sans JP", sans-serif';
+      g.fillText('L D K', 1000, 680);
+      g.font = '500 16px "Noto Sans JP", sans-serif';
+      g.fillText('18.5帖', 1000, 712);
+
+      g.font = '700 18px "Noto Sans JP", sans-serif';
+      g.fillText('浴室', 730, 312);
+      g.fillText('階段', 892, 500);
+      g.fillText('玄関', 690, 780);
+
+      // 図面タイトル（下部中央）
+      g.font = '700 22px "Noto Sans JP", sans-serif';
+      g.fillText('1階平面図  S=1/100', 780, 995);
+
+      return c;
+    }
+
+    async function loadSampleDrawings() {
+      setLoading(true, 'サンプル建築図面を生成・比較しています...');
+      try {
+        await new Promise((r) => setTimeout(r, 60));
+        state.isSample = true;
+        state.pdfDocA = null;
+        state.pdfDocB = null;
+        state.fileNameA = 'サンプル_1階平面図_変更前.pdf';
+        state.fileNameB = 'サンプル_1階平面図_変更後.pdf';
+        state.pageNum = 1;
+        state.maxPages = 1;
+
+        el.fileNameA.textContent = state.fileNameA;
+        el.fileMetaA.textContent = '1600 × 1131 px（サンプル図面）';
+        el.fileNameB.textContent = state.fileNameB;
+        el.fileMetaB.textContent = '1600 × 1131 px（サンプル図面）';
+        el.pageControlBox.classList.add('hidden');
+
+        state.canvasA = createArchitecturalSample(false);
+        state.canvasB = createArchitecturalSample(true);
+        state.docWidth = state.canvasA.width;
+        state.docHeight = state.canvasA.height;
+        state.isLoaded = true;
+
+        enableActionButtons();
+        runDiffDetection(true);
+        fitToScreen();
+        switchSidebarTab('diffs');
+        showToast('サンプル建築図面を読み込み、変更箇所を自動検出しました', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast('サンプルの生成中にエラーが発生しました', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // =========================================================================
+    // PDF 読み込み & レンダリング (PDF.js)
+    // =========================================================================
+    async function handlePdfUpload(file, slot) {
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+        showToast('PDFファイルを選択してください', 'error');
+        return;
+      }
+      if (!window.pdfjsLib) {
+        showToast('PDF.jsライブラリの読み込みに失敗しました。ネットワーク接続を確認してください。', 'error');
+        return;
+      }
+
+      setLoading(true, `${file.name} を読み込んでいます...`);
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdfDoc = await loadingTask.promise;
+
+        state.isSample = false;
+        if (slot === 'A') {
+          state.pdfDocA = pdfDoc;
+          state.fileNameA = file.name;
+          el.fileNameA.textContent = file.name;
+          el.fileMetaA.textContent = `${pdfDoc.numPages} ページ / ${(file.size / 1024).toFixed(0)} KB`;
+        } else {
+          state.pdfDocB = pdfDoc;
+          state.fileNameB = file.name;
+          el.fileNameB.textContent = file.name;
+          el.fileMetaB.textContent = `${pdfDoc.numPages} ページ / ${(file.size / 1024).toFixed(0)} KB`;
+        }
+
+        // 両方揃ったらレンダリング＆比較を実行
+        if (state.pdfDocA && state.pdfDocB) {
+          state.maxPages = Math.max(state.pdfDocA.numPages, state.pdfDocB.numPages);
+          state.pageNum = 1;
+          updatePageControls();
+          await renderCurrentPdfPages();
+          enableActionButtons();
+          runDiffDetection(true);
+          fitToScreen();
+          switchSidebarTab('diffs');
+          showToast('2つのPDFを比較し、相違点を検出しました', 'success');
+        } else {
+          showToast(`${slot === 'A' ? '変更前' : '変更後'}PDFを読み込みました。もう一方のPDFも選択してください。`, 'info');
+        }
+      } catch (err) {
+        console.error('PDF Load Error:', err);
+        showToast('PDFの読み込みに失敗しました（パスワード保護または破損ファイルの可能性があります）', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function renderPdfPageToCanvas(pdfDoc, pageNumber, targetWidth = null, targetHeight = null) {
+      const safePage = Math.min(pageNumber, pdfDoc.numPages);
+      const page = await pdfDoc.getPage(safePage);
+
+      // 高解像度レンダリング（長辺が最大2200px程度になるようスケール調整）
+      const baseViewport = page.getViewport({ scale: 1.0 });
+      const maxDim = Math.max(baseViewport.width, baseViewport.height);
+      const scale = Math.min(2.5, Math.max(1.5, 2000 / maxDim));
+      const viewport = page.getViewport({ scale });
+
+      const c = document.createElement('canvas');
+      c.width = targetWidth || Math.round(viewport.width);
+      c.height = targetHeight || Math.round(viewport.height);
+      const cCtx = c.getContext('2d');
+
+      // 白背景で塗る（透明PDF対策）
+      cCtx.fillStyle = '#ffffff';
+      cCtx.fillRect(0, 0, c.width, c.height);
+
+      // サイズが異なる場合はアスペクト比を維持しつつフィット
+      if (targetWidth && targetHeight && (Math.abs(viewport.width - targetWidth) > 2 || Math.abs(viewport.height - targetHeight) > 2)) {
+        const fitScale = Math.min(targetWidth / baseViewport.width, targetHeight / baseViewport.height);
+        const fitVp = page.getViewport({ scale: fitScale });
+        await page.render({ canvasContext: cCtx, viewport: fitVp }).promise;
+      } else {
+        await page.render({ canvasContext: cCtx, viewport }).promise;
+      }
+      return c;
+    }
+
+    async function renderCurrentPdfPages() {
+      if (!state.pdfDocA || !state.pdfDocB) return;
+      setLoading(true, `ページ ${state.pageNum} を高解像度レンダリング中...`);
+      try {
+        state.canvasA = await renderPdfPageToCanvas(state.pdfDocA, state.pageNum);
+        state.docWidth = state.canvasA.width;
+        state.docHeight = state.canvasA.height;
+        state.canvasB = await renderPdfPageToCanvas(state.pdfDocB, state.pageNum, state.docWidth, state.docHeight);
+        state.isLoaded = true;
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function updatePageControls() {
+      if (state.maxPages > 1) {
+        el.pageControlBox.classList.remove('hidden');
+        el.pageIndicator.textContent = `${state.pageNum} / ${state.maxPages} ページ`;
+        el.btnPrevPage.disabled = state.pageNum <= 1;
+        el.btnNextPage.disabled = state.pageNum >= state.maxPages;
+      } else {
+        el.pageControlBox.classList.add('hidden');
+      }
+    }
+
+    function enableActionButtons() {
+      el.emptyState.classList.add('hidden');
+      el.btnRunCompare.disabled = false;
+      el.btnExportPNG.disabled = false;
+      el.btnExportPDF.disabled = false;
+      el.statusDim.textContent = `図面サイズ: ${state.docWidth} × ${state.docHeight} px`;
+    }
+
+    // =========================================================================
+    // 差分検出エンジン（ピクセル比較 + 連結領域クラスタリング）
+    // =========================================================================
+    function runDiffDetection(preserveManual = true) {
+      if (!state.canvasA || !state.canvasB) return;
+
+      const W = state.docWidth;
+      const H = state.docHeight;
+      const ctxA = state.canvasA.getContext('2d');
+      const ctxB = state.canvasB.getContext('2d');
+      const imgA = ctxA.getImageData(0, 0, W, H).data;
+      const imgB = ctxB.getImageData(0, 0, W, H).data;
+
+      // 差分重ね合わせキャンバス作成
+      const overlayC = document.createElement('canvas');
+      overlayC.width = W;
+      overlayC.height = H;
+      const overlayCtx = overlayC.getContext('2d');
+      const overlayImg = overlayCtx.createImageData(W, H);
+      const out = overlayImg.data;
+
+      const threshold = state.diff.threshold;
+      const ox = Math.round(state.diff.offsetX);
+      const oy = Math.round(state.diff.offsetY);
+
+      // クラスタリング用ダウンサンプリンググリッド
+      const cellSize = 8;
+      const gridW = Math.ceil(W / cellSize);
+      const gridH = Math.ceil(H / cellSize);
+      const gridCounts = new Uint16Array(gridW * gridH);
+
+      for (let y = 0; y < H; y++) {
+        const by = y - oy;
+        const gy = (y / cellSize) | 0;
+        const rowOffsetA = y * W;
+        const rowOffsetB = by * W;
+
+        for (let x = 0; x < W; x++) {
+          const iA = (rowOffsetA + x) * 4;
+          const rA = imgA[iA], gA = imgA[iA + 1], bA = imgA[iA + 2];
+          const lumA = (rA * 77 + gA * 150 + bA * 29) >> 8;
+
+          const bx = x - ox;
+          let rB = 255, gB = 255, bB = 255, lumB = 255;
+          if (bx >= 0 && bx < W && by >= 0 && by < H) {
+            const iB = (rowOffsetB + bx) * 4;
+            rB = imgB[iB]; gB = imgB[iB + 1]; bB = imgB[iB + 2];
+            lumB = (rB * 77 + gB * 150 + bB * 29) >> 8;
+          }
+
+          // RGB最大差分
+          const diff = Math.max(Math.abs(rA - rB), Math.abs(gA - gB), Math.abs(bA - bB));
+          const isInkA = lumA < 235;
+          const isInkB = lumB < 235;
+
+          if (diff > threshold) {
+            // 差分ピクセルをグリッドに記録
+            const gx = (x / cellSize) | 0;
+            gridCounts[gy * gridW + gx]++;
+
+            // 重ね合わせビューの色分け（変更前のみ=赤、変更後のみ=青、両方濃いが違う色=紫）
+            if (lumA < lumB) {
+              // 変更前に線があり変更後で消えた -> 赤
+              out[iA] = 239; out[iA + 1] = 68; out[iA + 2] = 68; out[iA + 3] = 255;
+            } else {
+              // 変更後に線が追加された -> 青
+              out[iA] = 37; out[iA + 1] = 99; out[iA + 2] = 235; out[iA + 3] = 255;
+            }
+          } else {
+            // 共通部分（線は薄いグレー、背景は白）
+            if (isInkA || isInkB) {
+              out[iA] = 203; out[iA + 1] = 213; out[iA + 2] = 225; out[iA + 3] = 255;
+            } else {
+              out[iA] = 255; out[iA + 1] = 255; out[iA + 2] = 255; out[iA + 3] = 255;
+            }
+          }
+        }
+      }
+
+      overlayCtx.putImageData(overlayImg, 0, 0);
+      state.canvasOverlayDiff = overlayC;
+
+      // グリッド上でBFSによる近傍クラスタリング
+      const visited = new Uint8Array(gridW * gridH);
+      const searchR = Math.max(1, Math.ceil(state.diff.clusterRadius / cellSize));
+      const clusters = [];
+
+      for (let gy = 0; gy < gridH; gy++) {
+        for (let gx = 0; gx < gridW; gx++) {
+          const idx = gy * gridW + gx;
+          if (gridCounts[idx] === 0 || visited[idx]) continue;
+
+          // BFS開始
+          const queue = [gx, gy];
+          visited[idx] = 1;
+          let minGx = gx, maxGx = gx, minGy = gy, maxGy = gy;
+          let totalDiffPixels = 0;
+
+          let head = 0;
+          while (head < queue.length) {
+            const cx = queue[head++];
+            const cy = queue[head++];
+            totalDiffPixels += gridCounts[cy * gridW + cx];
+
+            if (cx < minGx) minGx = cx;
+            if (cx > maxGx) maxGx = cx;
+            if (cy < minGy) minGy = cy;
+            if (cy > maxGy) maxGy = cy;
+
+            const nyMin = Math.max(0, cy - searchR);
+            const nyMax = Math.min(gridH - 1, cy + searchR);
+            const nxMin = Math.max(0, cx - searchR);
+            const nxMax = Math.min(gridW - 1, cx + searchR);
+
+            for (let ny = nyMin; ny <= nyMax; ny++) {
+              const rowIdx = ny * gridW;
+              for (let nx = nxMin; nx <= nxMax; nx++) {
+                const nIdx = rowIdx + nx;
+                if (!visited[nIdx] && gridCounts[nIdx] > 0) {
+                  visited[nIdx] = 1;
+                  queue.push(nx, ny);
+                }
+              }
+            }
+          }
+
+          if (totalDiffPixels >= state.diff.minPixels) {
+            const pad = 16;
+            const x = Math.max(8, minGx * cellSize - pad);
+            const y = Math.max(8, minGy * cellSize - pad);
+            const x2 = Math.min(W - 8, (maxGx + 1) * cellSize + pad);
+            const y2 = Math.min(H - 8, (maxGy + 1) * cellSize + pad);
+            clusters.push({
+              x,
+              y,
+              w: Math.max(36, x2 - x),
+              h: Math.max(36, y2 - y),
+              pixels: totalDiffPixels,
+            });
+          }
+        }
+      }
+
+      // 上から下、左から右の順にソート
+      clusters.sort((a, b) => (Math.abs(a.y - b.y) > 80 ? a.y - b.y : a.x - b.x));
+
+      // 手動注釈を保持するかどうか
+      const manualAnns = preserveManual ? state.annotations.filter((a) => a.type === 'manual') : [];
+
+      const autoAnns = clusters.map((c, idx) => {
+        // ラベル位置は枠の少し上（上端に近い場合は下）
+        const labelX = c.x;
+        const labelY = c.y > 55 ? c.y - 16 : c.y + c.h + 32;
+        return {
+          id: `auto-${Date.now()}-${idx}`,
+          type: 'auto',
+          x: c.x,
+          y: c.y,
+          w: c.w,
+          h: c.h,
+          labelX,
+          labelY,
+          text: `相違点 #${idx + 1}`,
+          fontSize: Math.max(18, Math.round(W * 0.015)),
+          visible: true,
+          showBox: true,
+          showLeader: true,
+        };
+      });
+
+      state.annotations = [...autoAnns, ...manualAnns];
+      state.nextAnnotationNum = state.annotations.length + 1;
+      state.view.selectedId = null;
+
+      renderDiffList();
+      renderMainCanvas();
+    }
+
+    // =========================================================================
+    // 建築図面風の赤い雲マーク・注釈・「変更前」スタンプの描画エンジン
+    // =========================================================================
+
+    /**
+     * 建築図面の変更箇所を示す「雲マーク（Revision Cloud）」を描画
+     */
+    function drawRevisionCloud(targetCtx, x, y, w, h, lineWidth = 3) {
+      const arcStep = Math.max(18, Math.min(28, Math.min(w, h) / 3));
+      targetCtx.save();
+      targetCtx.strokeStyle = '#dc2626';
+      targetCtx.fillStyle = 'rgba(220, 38, 38, 0.06)';
+      targetCtx.lineWidth = lineWidth;
+      targetCtx.lineJoin = 'round';
+      targetCtx.beginPath();
+
+      // 4辺のパス点を生成
+      const drawEdgeArcs = (x1, y1, x2, y2) => {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy);
+        const count = Math.max(2, Math.round(len / arcStep));
+        const stepX = dx / count;
+        const stepY = dy / count;
+        // 外向きの法線ベクトル
+        const nx = dy / len;
+        const ny = -dx / len;
+        const bulge = (len / count) * 0.42;
+
+        for (let i = 0; i < count; i++) {
+          const sx = x1 + stepX * i;
+          const sy = y1 + stepY * i;
+          const ex = x1 + stepX * (i + 1);
+          const ey = y1 + stepY * (i + 1);
+          const mx = (sx + ex) / 2 + nx * bulge;
+          const my = (sy + ey) / 2 + ny * bulge;
+          targetCtx.quadraticCurveTo(mx, my, ex, ey);
+        }
+      };
+
+      targetCtx.moveTo(x, y);
+      drawEdgeArcs(x, y, x + w, y);         // 上辺
+      drawEdgeArcs(x + w, y, x + w, y + h); // 右辺
+      drawEdgeArcs(x + w, y + h, x, y + h); // 下辺
+      drawEdgeArcs(x, y + h, x, y);         // 左辺
+      targetCtx.closePath();
+      targetCtx.fill();
+      targetCtx.stroke();
+      targetCtx.restore();
+    }
+
+    /**
+     * 「変更前」スタンプのバウンディングボックスを計算
+     */
+    function getStampRect(targetCtx) {
+      const s = state.stamp;
+      targetCtx.save();
+      targetCtx.font = `700 ${s.fontSize}px "Noto Sans JP", "Inter", sans-serif`;
+      const metrics = targetCtx.measureText(s.text || '変更前');
+      targetCtx.restore();
+
+      const padX = Math.round(s.fontSize * 0.45);
+      const padY = Math.round(s.fontSize * 0.25);
+      const w = metrics.width + padX * 2;
+      const h = s.fontSize + padY * 2;
+      const x = state.docWidth - s.marginRight - w;
+      const y = s.marginTop;
+      return { x, y, w, h, padX, padY };
+    }
+
+    /**
+     * 赤文字ラベルのバウンディングボックスを計算
+     */
+    function getLabelRect(targetCtx, ann) {
+      targetCtx.save();
+      targetCtx.font = `700 ${ann.fontSize}px "Noto Sans JP", "Inter", sans-serif`;
+      const text = ann.text || '相違点';
+      const metrics = targetCtx.measureText(text);
+      targetCtx.restore();
+
+      const padX = 8;
+      const padY = 5;
+      const w = metrics.width + padX * 2;
+      const h = ann.fontSize + padY * 2;
+      return {
+        x: ann.labelX - padX,
+        y: ann.labelY - ann.fontSize - padY + 2,
+        w,
+        h,
+      };
+    }
+
+    /**
+     * 指定したコンテキストに「変更前」スタンプとすべての赤注釈を描画
+     * （メイン画面表示とPDF/PNG出力の両方で共通使用）
+     */
+    function drawAnnotationsAndStamp(targetCtx, isExport = false) {
+      // 1. 図枠右上の「変更前」スタンプ
+      if (state.stamp.enabled && state.stamp.text.trim() !== '') {
+        const s = state.stamp;
+        const rect = getStampRect(targetCtx);
+        targetCtx.save();
+
+        if (s.bgFill) {
+          targetCtx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+          targetCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
+        }
+        if (s.hasBorder) {
+          targetCtx.strokeStyle = '#dc2626';
+          targetCtx.lineWidth = Math.max(2.5, s.fontSize * 0.08);
+          targetCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        }
+
+        targetCtx.fillStyle = '#dc2626';
+        targetCtx.font = `700 ${s.fontSize}px "Noto Sans JP", "Inter", sans-serif`;
+        targetCtx.textBaseline = 'middle';
+        targetCtx.textAlign = 'center';
+        targetCtx.fillText(s.text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+
+        // 選択中のハイライト枠（出力時は非表示）
+        if (!isExport && state.view.selectedId === 'stamp') {
+          targetCtx.strokeStyle = '#0284c7';
+          targetCtx.lineWidth = 2;
+          targetCtx.setLineDash([6, 4]);
+          targetCtx.strokeRect(rect.x - 5, rect.y - 5, rect.w + 10, rect.h + 10);
+        }
+        targetCtx.restore();
+      }
+
+      // 2. 相違点・赤文字注釈
+      const markStyle = state.diff.markStyle;
+      for (const ann of state.annotations) {
+        if (!ann.visible) continue;
+        const isSelected = !isExport && state.view.selectedId === ann.id;
+
+        targetCtx.save();
+
+        // 2-a. 該当箇所の赤枠 / 雲マーク
+        if (ann.showBox && ann.w > 4 && ann.h > 4) {
+          if (markStyle === 'cloud') {
+            drawRevisionCloud(targetCtx, ann.x, ann.y, ann.w, ann.h, isSelected ? 4 : 2.8);
+          } else {
+            targetCtx.strokeStyle = '#dc2626';
+            targetCtx.fillStyle = 'rgba(220, 38, 38, 0.07)';
+            targetCtx.lineWidth = isSelected ? 4 : 2.8;
+            if (markStyle === 'dashed') {
+              targetCtx.setLineDash([10, 6]);
+            }
+            targetCtx.fillRect(ann.x, ann.y, ann.w, ann.h);
+            targetCtx.strokeRect(ann.x, ann.y, ann.w, ann.h);
+            targetCtx.setLineDash([]);
+          }
+        }
+
+        // 2-b. 引出線（ラベルと枠が離れている場合に自動で接続）
+        const lblRect = getLabelRect(targetCtx, ann);
+        if (ann.showBox && ann.showLeader && ann.w > 4 && ann.h > 4) {
+          const boxCx = ann.x + ann.w / 2;
+          const boxCy = ann.y + ann.h / 2;
+          const lblCx = lblRect.x + lblRect.w / 2;
+          const lblCy = lblRect.y + lblRect.h / 2;
+
+          // 枠の外周上の最近点
+          const clampX = Math.max(ann.x, Math.min(ann.x + ann.w, lblCx));
+          const clampY = Math.max(ann.y, Math.min(ann.y + ann.h, lblCy));
+          const dist = Math.hypot(lblCx - clampX, lblCy - clampY);
+
+          if (dist > 14) {
+            targetCtx.strokeStyle = '#dc2626';
+            targetCtx.lineWidth = 2;
+            targetCtx.beginPath();
+            targetCtx.moveTo(lblCx, lblCy);
+            targetCtx.lineTo(clampX, clampY);
+            targetCtx.stroke();
+
+            // 接続点に小さな赤丸
+            targetCtx.fillStyle = '#dc2626';
+            targetCtx.beginPath();
+            targetCtx.arc(clampX, clampY, 4, 0, Math.PI * 2);
+            targetCtx.fill();
+          }
+        }
+
+        // 2-c. 赤文字ラベル（視認性向上のため白半透明の座布団付き）
+        targetCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        targetCtx.beginPath();
+        targetCtx.roundRect(lblRect.x, lblRect.y, lblRect.w, lblRect.h, 5);
+        targetCtx.fill();
+
+        targetCtx.strokeStyle = isSelected ? '#0284c7' : 'rgba(220, 38, 38, 0.55)';
+        targetCtx.lineWidth = isSelected ? 2.5 : 1.5;
+        targetCtx.stroke();
+
+        targetCtx.fillStyle = '#dc2626';
+        targetCtx.font = `700 ${ann.fontSize}px "Noto Sans JP", "Inter", sans-serif`;
+        targetCtx.textBaseline = 'alphabetic';
+        targetCtx.textAlign = 'left';
+        targetCtx.fillText(ann.text || '相違点', ann.labelX, ann.labelY);
+
+        targetCtx.restore();
+      }
+    }
+
+    // =========================================================================
+    // メインキャンバスのレンダリング（4つの比較モード対応）
+    // =========================================================================
+    function resizeMainCanvas() {
+      const rect = el.canvasContainer.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      el.mainCanvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      el.mainCanvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      renderMainCanvas();
+    }
+
+    function fitToScreen() {
+      if (!state.isLoaded) return;
+      const rect = el.canvasContainer.getBoundingClientRect();
+      const pad = 36;
+      const availW = Math.max(100, rect.width - pad * 2);
+      const availH = Math.max(100, rect.height - pad * 2);
+
+      const contentW = state.view.mode === 'sideBySide' ? state.docWidth * 2 + 40 : state.docWidth;
+      const contentH = state.docHeight;
+
+      const scale = Math.min(availW / contentW, availH / contentH);
+      state.view.zoom = Math.max(0.1, Math.min(4, scale));
+      state.view.panX = (rect.width - contentW * state.view.zoom) / 2;
+      state.view.panY = (rect.height - contentH * state.view.zoom) / 2;
+      updateZoomLabel();
+      renderMainCanvas();
+    }
+
+    function updateZoomLabel() {
+      el.zoomLabel.textContent = `${Math.round(state.view.zoom * 100)}%`;
+    }
+
+    function screenToDoc(screenX, screenY) {
+      return {
+        x: (screenX - state.view.panX) / state.view.zoom,
+        y: (screenY - state.view.panY) / state.view.zoom,
+      };
+    }
+
+    function renderMainCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const viewW = el.mainCanvas.width / dpr;
+      const viewH = el.mainCanvas.height / dpr;
+
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, viewW, viewH);
+
+      if (!state.isLoaded || !state.canvasA || !state.canvasB) {
+        ctx.restore();
+        return;
+      }
+
+      const { zoom, panX, panY, mode } = state.view;
+      const W = state.docWidth;
+      const H = state.docHeight;
+
+      ctx.save();
+      ctx.translate(panX, panY);
+      ctx.scale(zoom, zoom);
+
+      // 図面のドロップシャドウ
+      ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
+      ctx.shadowBlur = 20 / zoom;
+      ctx.shadowOffsetY = 6 / zoom;
+
+      if (mode === 'preview') {
+        // 1) 変更前＋赤注釈（出力プレビュー）
+        ctx.drawImage(state.canvasA, 0, 0);
+        ctx.shadowColor = 'transparent';
+        drawAnnotationsAndStamp(ctx, false);
+
+      } else if (mode === 'overlay') {
+        // 2) 差分重ね合わせ
+        if (state.canvasOverlayDiff) {
+          ctx.drawImage(state.canvasOverlayDiff, 0, 0);
+        } else {
+          ctx.drawImage(state.canvasA, 0, 0);
+        }
+        ctx.shadowColor = 'transparent';
+        drawAnnotationsAndStamp(ctx, false);
+
+      } else if (mode === 'slider') {
+        // 3) スライダー比較
+        const splitX = W * state.view.sliderPos;
+        // 右側（変更後）
+        ctx.drawImage(state.canvasB, 0, 0);
+        ctx.shadowColor = 'transparent';
+
+        // 左側（変更前＋赤注釈）をクリップして描画
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, splitX, H);
+        ctx.clip();
+        ctx.drawImage(state.canvasA, 0, 0);
+        drawAnnotationsAndStamp(ctx, false);
+        ctx.restore();
+
+        // スライダー境界線とハンドル
+        ctx.save();
+        ctx.strokeStyle = '#e11d48';
+        ctx.lineWidth = 3 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(splitX, 0);
+        ctx.lineTo(splitX, H);
+        ctx.stroke();
+
+        // 中央丸ハンドル
+        const handleY = H / 2;
+        const r = 20 / zoom;
+        ctx.fillStyle = '#e11d48';
+        ctx.beginPath();
+        ctx.arc(splitX, handleY, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5 / zoom;
+        ctx.stroke();
+
+        // 左右矢印アイコン
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `700 ${14 / zoom}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('◀ ▶', splitX, handleY);
+
+        // 上部バッジ（変更前 / 変更後）
+        ctx.font = `700 ${15 / zoom}px "Noto Sans JP", sans-serif`;
+        const bH = 28 / zoom;
+        const bW = 86 / zoom;
+        ctx.fillStyle = 'rgba(225, 29, 72, 0.9)';
+        ctx.fillRect(Math.max(0, splitX - bW - 10 / zoom), 12 / zoom, bW, bH);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('変更前', Math.max(0, splitX - bW - 10 / zoom) + bW / 2, 12 / zoom + bH / 2);
+
+        ctx.fillStyle = 'rgba(2, 132, 199, 0.9)';
+        ctx.fillRect(Math.min(W - bW, splitX + 10 / zoom), 12 / zoom, bW, bH);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('変更後', Math.min(W - bW, splitX + 10 / zoom) + bW / 2, 12 / zoom + bH / 2);
+        ctx.restore();
+
+      } else if (mode === 'sideBySide') {
+        // 4) 左右並列表示
+        const gap = 40;
+        // 左：変更前＋赤注釈
+        ctx.drawImage(state.canvasA, 0, 0);
+        ctx.shadowColor = 'transparent';
+        drawAnnotationsAndStamp(ctx, false);
+
+        // 右：変更後
+        ctx.save();
+        ctx.translate(W + gap, 0);
+        ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
+        ctx.shadowBlur = 20 / zoom;
+        ctx.drawImage(state.canvasB, 0, 0);
+        ctx.shadowColor = 'transparent';
+
+        // 右図面の上部に「変更後（参照）」バッジ
+        ctx.fillStyle = 'rgba(2, 132, 199, 0.92)';
+        ctx.fillRect(16, 16, 150, 38);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 20px "Noto Sans JP", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('変更後（参照）', 91, 35);
+        ctx.restore();
+      }
+
+      // 手動赤枠描画中のラバーバンド
+      if (state.drag.active && state.drag.type === 'drawBox') {
+        const rx = Math.min(state.drag.startDocX, state.drag.currentDocX);
+        const ry = Math.min(state.drag.startDocY, state.drag.currentDocY);
+        const rw = Math.abs(state.drag.currentDocX - state.drag.startDocX);
+        const rh = Math.abs(state.drag.currentDocY - state.drag.startDocY);
+        ctx.save();
+        ctx.strokeStyle = '#dc2626';
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.12)';
+        ctx.lineWidth = 2.5 / zoom;
+        ctx.setLineDash([8 / zoom, 4 / zoom]);
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.restore();
+      }
+
+      ctx.restore();
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // サイドバー：相違点リストの描画 & 操作
+    // =========================================================================
+    function renderDiffList() {
+      const list = state.annotations;
+      el.badgeDiffCount.textContent = list.length;
+
+      if (list.length === 0) {
+        el.diffListContainer.innerHTML = `
+          <div class="text-center py-8 px-4 rounded-xl border border-dashed border-slate-300 text-slate-400 text-xs">
+            相違点は検出されていません。<br/>設定を調整するか、ツールバーから手動で赤文字を追加できます。
+          </div>`;
+        return;
+      }
+
+      el.diffListContainer.innerHTML = '';
+      list.forEach((ann, index) => {
+        const isSelected = state.view.selectedId === ann.id;
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-xl border transition cursor-pointer ${
+          isSelected
+            ? 'bg-rose-50/70 border-rose-400 ring-1 ring-rose-300'
+            : 'bg-white border-slate-200 hover:border-slate-300'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="w-5 h-5 rounded-md ${ann.type === 'auto' ? 'bg-rose-600' : 'bg-amber-600'} text-white text-[10px] font-bold flex items-center justify-center shrink-0">${index + 1}</span>
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded ${ann.type === 'auto' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'}">
+                ${ann.type === 'auto' ? '自動検出' : '手動追加'}
+              </span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-toggle-vis p-1 rounded hover:bg-slate-100 text-slate-500" title="${ann.visible ? '非表示にする' : '表示する'}">
+                <svg class="w-3.5 h-3.5 ${ann.visible ? 'text-slate-600' : 'text-slate-300'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="${ann.visible
+                    ? 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z'
+                    : 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M3 3l18 18'
+                  }" />
+                </svg>
+              </button>
+              <button class="btn-edit-ann p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-sky-600" title="詳細編集">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+              <button class="btn-del-ann p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-600" title="削除">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <input type="text" value="${escapeHtml(ann.text)}" class="input-ann-text w-full px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-slate-50 focus:bg-white border border-slate-200 focus:border-rose-400 rounded-lg focus:outline-none" placeholder="赤文字テキストを入力..." />
+        `;
+
+        // カードクリックで該当箇所へフォーカス
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('button') || e.target.tagName === 'INPUT') return;
+          focusOnAnnotation(ann);
+        });
+
+        // テキスト即時編集
+        const input = card.querySelector('.input-ann-text');
+        input.addEventListener('focus', () => {
+          state.view.selectedId = ann.id;
+          renderMainCanvas();
+        });
+        input.addEventListener('input', (e) => {
+          ann.text = e.target.value;
+          renderMainCanvas();
+        });
+
+        // 表示/非表示切替
+        card.querySelector('.btn-toggle-vis').addEventListener('click', () => {
+          ann.visible = !ann.visible;
+          renderDiffList();
+          renderMainCanvas();
+        });
+
+        // モーダル編集
+        card.querySelector('.btn-edit-ann').addEventListener('click', () => {
+          openEditModal(ann.id);
+        });
+
+        // 削除
+        card.querySelector('.btn-del-ann').addEventListener('click', () => {
+          state.annotations = state.annotations.filter((a) => a.id !== ann.id);
+          if (state.view.selectedId === ann.id) state.view.selectedId = null;
+          renderDiffList();
+          renderMainCanvas();
+        });
+
+        el.diffListContainer.appendChild(card);
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function focusOnAnnotation(ann) {
+      state.view.selectedId = ann.id;
+      const rect = el.canvasContainer.getBoundingClientRect();
+      const targetZoom = Math.max(state.view.zoom, 1.0);
+      state.view.zoom = Math.min(2.2, targetZoom);
+
+      const cx = ann.showBox ? ann.x + ann.w / 2 : ann.labelX + 40;
+      const cy = ann.showBox ? ann.y + ann.h / 2 : ann.labelY;
+      state.view.panX = rect.width / 2 - cx * state.view.zoom;
+      state.view.panY = rect.height / 2 - cy * state.view.zoom;
+
+      updateZoomLabel();
+      renderDiffList();
+      renderMainCanvas();
+    }
+
+    // =========================================================================
+    // キャンバス上のインタラクション（ヒットテスト・ドラッグ・ズーム・手動追加）
+    // =========================================================================
+    function hitTest(docX, docY) {
+      // 1. スライダー比較モード時の分割線ハンドル
+      if (state.view.mode === 'slider') {
+        const splitX = state.docWidth * state.view.sliderPos;
+        if (Math.abs(docX - splitX) < 26 / state.view.zoom && docY >= 0 && docY <= state.docHeight) {
+          return { type: 'slider' };
+        }
+      }
+
+      // 2. 右上「変更前」スタンプ
+      if (state.stamp.enabled) {
+        const r = getStampRect(ctx);
+        if (docX >= r.x && docX <= r.x + r.w && docY >= r.y && docY <= r.y + r.h) {
+          return { type: 'stamp', id: 'stamp' };
+        }
+      }
+
+      // 3. 赤文字ラベル（手前から判定）
+      for (let i = state.annotations.length - 1; i >= 0; i--) {
+        const ann = state.annotations[i];
+        if (!ann.visible) continue;
+        const r = getLabelRect(ctx, ann);
+        if (docX >= r.x && docX <= r.x + r.w && docY >= r.y && docY <= r.y + r.h) {
+          return { type: 'label', id: ann.id, ann };
+        }
+      }
+
+      // 4. 赤枠（ボックス）
+      for (let i = state.annotations.length - 1; i >= 0; i--) {
+        const ann = state.annotations[i];
+        if (!ann.visible || !ann.showBox) continue;
+        if (docX >= ann.x && docX <= ann.x + ann.w && docY >= ann.y && docY <= ann.y + ann.h) {
+          return { type: 'box', id: ann.id, ann };
+        }
+      }
+
+      return null;
+    }
+
+    function getPointerPos(e) {
+      const rect = el.mainCanvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        screenX: clientX - rect.left,
+        screenY: clientY - rect.top,
+      };
+    }
+
+    function onPointerDown(e) {
+      if (!state.isLoaded) return;
+      if (e.button !== undefined && e.button !== 0) return;
+
+      const { screenX, screenY } = getPointerPos(e);
+      const doc = screenToDoc(screenX, screenY);
+
+      // 手動「赤文字追加」モード
+      if (state.view.tool === 'addText') {
+        const newAnn = {
+          id: `manual-${Date.now()}`,
+          type: 'manual',
+          x: doc.x,
+          y: doc.y,
+          w: 0,
+          h: 0,
+          labelX: doc.x,
+          labelY: doc.y,
+          text: `変更点 #${state.nextAnnotationNum++}`,
+          fontSize: Math.max(20, Math.round(state.docWidth * 0.015)),
+          visible: true,
+          showBox: false,
+          showLeader: false,
+        };
+        state.annotations.push(newAnn);
+        state.view.selectedId = newAnn.id;
+        setTool('select');
+        renderDiffList();
+        renderMainCanvas();
+        openEditModal(newAnn.id);
+        return;
+      }
+
+      // 手動「赤枠追加」モード
+      if (state.view.tool === 'addBox') {
+        state.drag = {
+          active: true,
+          type: 'drawBox',
+          startScreenX: screenX,
+          startScreenY: screenY,
+          startDocX: doc.x,
+          startDocY: doc.y,
+          currentDocX: doc.x,
+          currentDocY: doc.y,
+        };
+        return;
+      }
+
+      // 選択/移動モード：ヒットテスト
+      const hit = hitTest(doc.x, doc.y);
+      if (hit) {
+        if (hit.type === 'slider') {
+          state.drag = { active: true, type: 'slider' };
+        } else if (hit.type === 'stamp') {
+          state.view.selectedId = 'stamp';
+          state.drag = {
+            active: true,
+            type: 'stamp',
+            startDocX: doc.x,
+            startDocY: doc.y,
+            origX: state.stamp.marginRight,
+            origY: state.stamp.marginTop,
+          };
+        } else if (hit.type === 'label') {
+          state.view.selectedId = hit.id;
+          state.drag = {
+            active: true,
+            type: 'label',
+            targetId: hit.id,
+            startDocX: doc.x,
+            startDocY: doc.y,
+            origX: hit.ann.labelX,
+            origY: hit.ann.labelY,
+          };
+        } else if (hit.type === 'box') {
+          state.view.selectedId = hit.id;
+          state.drag = {
+            active: true,
+            type: 'box',
+            targetId: hit.id,
+            startDocX: doc.x,
+            startDocY: doc.y,
+            origX: hit.ann.x,
+            origY: hit.ann.y,
+            origLabelX: hit.ann.labelX,
+            origLabelY: hit.ann.labelY,
+          };
+        }
+        renderDiffList();
+        renderMainCanvas();
+      } else {
+        // 空白部分のドラッグ -> パン移動
+        state.view.selectedId = null;
+        state.drag = {
+          active: true,
+          type: 'pan',
+          startScreenX: screenX,
+          startScreenY: screenY,
+          origX: state.view.panX,
+          origY: state.view.panY,
+        };
+        el.mainCanvas.style.cursor = 'grabbing';
+        renderDiffList();
+        renderMainCanvas();
+      }
+    }
+
+    function onPointerMove(e) {
+      if (!state.isLoaded) return;
+      const { screenX, screenY } = getPointerPos(e);
+      const doc = screenToDoc(screenX, screenY);
+
+      if (!state.drag.active) {
+        // ホバー時のカーソル更新
+        if (state.view.tool === 'addText' || state.view.tool === 'addBox') {
+          el.mainCanvas.style.cursor = 'crosshair';
+        } else {
+          const hit = hitTest(doc.x, doc.y);
+          if (!hit) el.mainCanvas.style.cursor = 'grab';
+          else if (hit.type === 'slider') el.mainCanvas.style.cursor = 'ew-resize';
+          else el.mainCanvas.style.cursor = 'move';
+        }
+        return;
+      }
+
+      if (e.cancelable) e.preventDefault();
+
+      if (state.drag.type === 'pan') {
+        state.view.panX = state.drag.origX + (screenX - state.drag.startScreenX);
+        state.view.panY = state.drag.origY + (screenY - state.drag.startScreenY);
+      } else if (state.drag.type === 'slider') {
+        state.view.sliderPos = Math.max(0.02, Math.min(0.98, doc.x / state.docWidth));
+      } else if (state.drag.type === 'stamp') {
+        const dx = doc.x - state.drag.startDocX;
+        const dy = doc.y - state.drag.startDocY;
+        state.stamp.marginRight = Math.max(0, Math.round(state.drag.origX - dx));
+        state.stamp.marginTop = Math.max(0, Math.round(state.drag.origY + dy));
+        syncStampControls();
+      } else if (state.drag.type === 'label') {
+        const ann = state.annotations.find((a) => a.id === state.drag.targetId);
+        if (ann) {
+          ann.labelX = state.drag.origX + (doc.x - state.drag.startDocX);
+          ann.labelY = state.drag.origY + (doc.y - state.drag.startDocY);
+        }
+      } else if (state.drag.type === 'box') {
+        const ann = state.annotations.find((a) => a.id === state.drag.targetId);
+        if (ann) {
+          const dx = doc.x - state.drag.startDocX;
+          const dy = doc.y - state.drag.startDocY;
+          ann.x = state.drag.origX + dx;
+          ann.y = state.drag.origY + dy;
+          ann.labelX = state.drag.origLabelX + dx;
+          ann.labelY = state.drag.origLabelY + dy;
+        }
+      } else if (state.drag.type === 'drawBox') {
+        state.drag.currentDocX = doc.x;
+        state.drag.currentDocY = doc.y;
+      }
+
+      renderMainCanvas();
+    }
+
+    function onPointerUp() {
+      if (!state.drag.active) return;
+
+      if (state.drag.type === 'drawBox') {
+        const x = Math.min(state.drag.startDocX, state.drag.currentDocX);
+        const y = Math.min(state.drag.startDocY, state.drag.currentDocY);
+        const w = Math.abs(state.drag.currentDocX - state.drag.startDocX);
+        const h = Math.abs(state.drag.currentDocY - state.drag.startDocY);
+
+        if (w > 12 && h > 12) {
+          const newAnn = {
+            id: `manual-${Date.now()}`,
+            type: 'manual',
+            x, y, w, h,
+            labelX: x,
+            labelY: y > 50 ? y - 14 : y + h + 30,
+            text: `変更点 #${state.nextAnnotationNum++}`,
+            fontSize: Math.max(20, Math.round(state.docWidth * 0.015)),
+            visible: true,
+            showBox: true,
+            showLeader: true,
+          };
+          state.annotations.push(newAnn);
+          state.view.selectedId = newAnn.id;
+          setTool('select');
+          renderDiffList();
+          openEditModal(newAnn.id);
+        }
+      }
+
+      state.drag.active = false;
+      state.drag.type = null;
+      el.mainCanvas.style.cursor = 'grab';
+      renderMainCanvas();
+    }
+
+    // ダブルクリックで注釈テキスト編集モーダルを開く
+    el.mainCanvas.addEventListener('dblclick', (e) => {
+      if (!state.isLoaded) return;
+      const { screenX, screenY } = getPointerPos(e);
+      const doc = screenToDoc(screenX, screenY);
+      const hit = hitTest(doc.x, doc.y);
+      if (hit && (hit.type === 'label' || hit.type === 'box')) {
+        openEditModal(hit.id);
+      } else if (hit && hit.type === 'stamp') {
+        switchSidebarTab('settings');
+        el.inputStampText.focus();
+      }
+    });
+
+    // マウスホイールズーム（カーソル位置中心）
+    el.mainCanvas.addEventListener('wheel', (e) => {
+      if (!state.isLoaded) return;
+      e.preventDefault();
+      const { screenX, screenY } = getPointerPos(e);
+      const factor = e.deltaY < 0 ? 1.12 : 0.89;
+      zoomAt(screenX, screenY, factor);
+    }, { passive: false });
+
+    function zoomAt(screenX, screenY, factor) {
+      const prevZoom = state.view.zoom;
+      const nextZoom = Math.max(0.15, Math.min(5.0, prevZoom * factor));
+      const ratio = nextZoom / prevZoom;
+      state.view.panX = screenX - (screenX - state.view.panX) * ratio;
+      state.view.panY = screenY - (screenY - state.view.panY) * ratio;
+      state.view.zoom = nextZoom;
+      updateZoomLabel();
+      renderMainCanvas();
+    }
+
+    // ポインターイベント登録（マウス＆タッチ両対応）
+    el.mainCanvas.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('mouseup', onPointerUp);
+
+    el.mainCanvas.addEventListener('touchstart', onPointerDown, { passive: false });
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+
+    // =========================================================================
+    // 編集モーダル操作
+    // =========================================================================
+    function openEditModal(annId) {
+      const ann = state.annotations.find((a) => a.id === annId);
+      if (!ann) return;
+      state.editingAnnotationId = annId;
+      el.modalInputText.value = ann.text;
+      el.modalRangeFontSize.value = ann.fontSize;
+      el.modalValFontSize.textContent = `${ann.fontSize}px`;
+      el.modalChkBox.checked = ann.showBox;
+      el.modalChkLeader.checked = ann.showLeader;
+      el.editModal.classList.remove('hidden');
+      setTimeout(() => {
+        el.modalInputText.focus();
+        el.modalInputText.select();
+      }, 30);
+    }
+
+    function closeEditModal() {
+      state.editingAnnotationId = null;
+      el.editModal.classList.add('hidden');
+    }
+
+    function saveEditModal() {
+      const ann = state.annotations.find((a) => a.id === state.editingAnnotationId);
+      if (ann) {
+        ann.text = el.modalInputText.value.trim() || '相違点';
+        ann.fontSize = Number(el.modalRangeFontSize.value);
+        ann.showBox = el.modalChkBox.checked;
+        ann.showLeader = el.modalChkLeader.checked;
+        renderDiffList();
+        renderMainCanvas();
+      }
+      closeEditModal();
+    }
+
+    el.modalRangeFontSize.addEventListener('input', (e) => {
+      el.modalValFontSize.textContent = `${e.target.value}px`;
+    });
+    el.btnCloseEditModal.addEventListener('click', closeEditModal);
+    el.btnCancelEditModal.addEventListener('click', closeEditModal);
+    el.btnSaveEditModal.addEventListener('click', saveEditModal);
+    el.modalInputText.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveEditModal();
+      if (e.key === 'Escape') closeEditModal();
+    });
+    el.btnDeleteInModal.addEventListener('click', () => {
+      if (state.editingAnnotationId) {
+        state.annotations = state.annotations.filter((a) => a.id !== state.editingAnnotationId);
+        state.view.selectedId = null;
+        renderDiffList();
+        renderMainCanvas();
+      }
+      closeEditModal();
+    });
+
+    // =========================================================================
+    // PDF / PNG エクスポート機能（変更前図面＋右上「変更前」＋赤注釈を合成）
+    // =========================================================================
+    function createExportCanvas() {
+      const exp = document.createElement('canvas');
+      exp.width = state.docWidth;
+      exp.height = state.docHeight;
+      const eCtx = exp.getContext('2d');
+
+      // 要件②: 1つ目のファイル（変更前）をベースにする
+      eCtx.fillStyle = '#ffffff';
+      eCtx.fillRect(0, 0, exp.width, exp.height);
+      eCtx.drawImage(state.canvasA, 0, 0);
+
+      // 右上の「変更前」表記と該当箇所の赤文字・赤マークを合成
+      drawAnnotationsAndStamp(eCtx, true);
+      return exp;
+    }
+
+    function exportAsPNG() {
+      if (!state.isLoaded) return;
+      try {
+        const exp = createExportCanvas();
+        const link = document.createElement('a');
+        const baseName = (state.fileNameA || '建築図面').replace(/\.pdf$/i, '');
+        link.download = `${baseName}_変更前_赤入れ.png`;
+        link.href = exp.toDataURL('image/png');
+        link.click();
+        showToast('PNG画像をダウンロードしました', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast('PNG画像の出力に失敗しました', 'error');
+      }
+    }
+
+    function exportAsPDF() {
+      if (!state.isLoaded) return;
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        showToast('jsPDFライブラリの読み込みに失敗しました', 'error');
+        return;
+      }
+      setLoading(true, 'PDFファイルを生成しています...');
+      setTimeout(() => {
+        try {
+          const exp = createExportCanvas();
+          const imgData = exp.toDataURL('image/jpeg', 0.95);
+          const isLandscape = exp.width >= exp.height;
+          const { jsPDF } = window.jspdf;
+
+          // 原寸のアスペクト比をそのままPDFページサイズに適用（pt単位換算）
+          const pdf = new jsPDF({
+            orientation: isLandscape ? 'landscape' : 'portrait',
+            unit: 'px',
+            format: [exp.width, exp.height],
+            hotfixes: ['px_scaling'],
+          });
+
+          pdf.addImage(imgData, 'JPEG', 0, 0, exp.width, exp.height);
+          const baseName = (state.fileNameA || '建築図面').replace(/\.pdf$/i, '');
+          pdf.save(`${baseName}_変更前_赤入れ.pdf`);
+          showToast('「変更前」表記・赤注釈付きPDFを出力しました', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast('PDFの出力中にエラーが発生しました', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }, 40);
+    }
+
+    // =========================================================================
+    // UI コントロール・イベントバインド
+    // =========================================================================
+
+    // サイドバータブ切替
+    function switchSidebarTab(tabName) {
+      document.querySelectorAll('.stab-btn').forEach((btn) => {
+        const active = btn.dataset.stab === tabName;
+        btn.className = `stab-btn py-1.5 px-2 rounded-md text-xs transition flex items-center justify-center gap-1 ${
+          active ? 'font-semibold bg-white text-slate-900 shadow-sm' : 'font-medium text-slate-600 hover:text-slate-900'
+        }`;
+      });
+      ['files', 'diffs', 'settings'].forEach((id) => {
+        document.getElementById(`stab-${id}`).classList.toggle('hidden', id !== tabName);
+      });
+    }
+    document.querySelectorAll('.stab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => switchSidebarTab(btn.dataset.stab));
+    });
+
+    // モバイル用サイドバー開閉
+    function toggleMobileSidebar(forceClose = false) {
+      const isClosed = el.sidebar.classList.contains('-translate-x-full');
+      if (forceClose || !isClosed) {
+        el.sidebar.classList.add('-translate-x-full');
+        el.sidebarBackdrop.classList.add('hidden');
+      } else {
+        el.sidebar.classList.remove('-translate-x-full');
+        el.sidebarBackdrop.classList.remove('hidden');
+      }
+    }
+    el.btnToggleSidebar.addEventListener('click', () => toggleMobileSidebar(false));
+    el.sidebarBackdrop.addEventListener('click', () => toggleMobileSidebar(true));
+
+    // 表示モード切替
+    document.querySelectorAll('.mode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.mode;
+        state.view.mode = mode;
+        document.querySelectorAll('.mode-btn').forEach((b) => {
+          const active = b.dataset.mode === mode;
+          b.className = `mode-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition ${
+            active ? 'font-bold bg-white text-rose-700 shadow-sm' : 'font-medium text-slate-600 hover:text-slate-900'
+          }`;
+        });
+        el.overlayLegend.classList.toggle('hidden', mode !== 'overlay');
+        if (state.isLoaded) fitToScreen();
+      });
+    });
+
+    // ツール切替
+    function setTool(toolName) {
+      state.view.tool = toolName;
+      document.querySelectorAll('.tool-btn').forEach((b) => {
+        const active = b.dataset.tool === toolName;
+        b.className = `tool-btn p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs flex items-center gap-1 transition ${
+          active ? 'font-semibold bg-white text-slate-900 shadow-sm' : 'font-medium text-slate-600 hover:text-rose-700'
+        }`;
+      });
+      if (toolName === 'addText') {
+        el.toolHintText.textContent = '図面上の任意の場所をクリックして赤文字を追加';
+        el.toolHintBar.classList.remove('hidden');
+      } else if (toolName === 'addBox') {
+        el.toolHintText.textContent = '図面上でドラッグして赤枠＋赤文字を追加';
+        el.toolHintBar.classList.remove('hidden');
+      } else {
+        el.toolHintBar.classList.add('hidden');
+      }
+    }
+    document.querySelectorAll('.tool-btn').forEach((btn) => {
+      btn.addEventListener('click', () => setTool(btn.dataset.tool));
+    });
+    el.btnCancelTool.addEventListener('click', () => setTool('select'));
+
+    // ズームボタン
+    el.btnZoomIn.addEventListener('click', () => {
+      const r = el.canvasContainer.getBoundingClientRect();
+      zoomAt(r.width / 2, r.height / 2, 1.25);
+    });
+    el.btnZoomOut.addEventListener('click', () => {
+      const r = el.canvasContainer.getBoundingClientRect();
+      zoomAt(r.width / 2, r.height / 2, 0.8);
+    });
+    el.btnZoomFit.addEventListener('click', fitToScreen);
+
+    // ドラッグ＆ドロップ設定ヘルパー
+    function setupDropZone(zone, input, slot) {
+      zone.addEventListener('click', () => input.click());
+      input.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          handlePdfUpload(e.target.files[0], slot);
+        }
+      });
+      zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        zone.classList.add('border-rose-500', 'bg-rose-50');
+      });
+      zone.addEventListener('dragleave', () => {
+        zone.classList.remove('border-rose-500', 'bg-rose-50');
+      });
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('border-rose-500', 'bg-rose-50');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handlePdfUpload(e.dataTransfer.files[0], slot);
+        }
+      });
+    }
+    setupDropZone(el.dropZoneA, el.fileInputA, 'A');
+    setupDropZone(el.dropZoneB, el.fileInputB, 'B');
+
+    // ページ送り
+    el.btnPrevPage.addEventListener('click', async () => {
+      if (state.pageNum <= 1) return;
+      state.pageNum--;
+      updatePageControls();
+      await renderCurrentPdfPages();
+      runDiffDetection(false);
+      fitToScreen();
+    });
+    el.btnNextPage.addEventListener('click', async () => {
+      if (state.pageNum >= state.maxPages) return;
+      state.pageNum++;
+      updatePageControls();
+      await renderCurrentPdfPages();
+      runDiffDetection(false);
+      fitToScreen();
+    });
+
+    // サンプル読込ボタン（3箇所）
+    [el.btnLoadSample, el.btnLoadSampleHeader, el.btnLoadSampleEmpty].forEach((btn) => {
+      btn.addEventListener('click', () => {
+        loadSampleDrawings();
+        toggleMobileSidebar(true);
+      });
+    });
+
+    // 差分再検出・全クリア
+    el.btnRunCompare.addEventListener('click', () => {
+      runDiffDetection(true);
+      showToast(`${state.annotations.length} 件の相違点を検出しました`, 'info');
+    });
+    el.btnApplyDiffSettings.addEventListener('click', () => {
+      runDiffDetection(true);
+      showToast(`設定を反映し、${state.annotations.length} 件の相違点を検出しました`, 'success');
+    });
+    el.btnClearAuto.addEventListener('click', () => {
+      state.annotations = [];
+      state.view.selectedId = null;
+      renderDiffList();
+      renderMainCanvas();
+      showToast('すべての注釈をクリアしました', 'info');
+    });
+
+    // 赤枠スタイル変更
+    el.selectMarkStyle.addEventListener('change', (e) => {
+      state.diff.markStyle = e.target.value;
+      renderMainCanvas();
+    });
+
+    // 「変更前」スタンプ設定バインド
+    function syncStampControls() {
+      el.rangeStampRight.value = Math.min(400, state.stamp.marginRight);
+      el.rangeStampTop.value = Math.min(300, state.stamp.marginTop);
+      el.valStampRight.textContent = `${state.stamp.marginRight}px`;
+      el.valStampTop.textContent = `${state.stamp.marginTop}px`;
+      el.valStampSize.textContent = `${state.stamp.fontSize}px`;
+    }
+
+    el.chkStampEnabled.addEventListener('change', (e) => {
+      state.stamp.enabled = e.target.checked;
+      renderMainCanvas();
+    });
+    el.inputStampText.addEventListener('input', (e) => {
+      state.stamp.text = e.target.value;
+      renderMainCanvas();
+    });
+    el.rangeStampRight.addEventListener('input', (e) => {
+      state.stamp.marginRight = Number(e.target.value);
+      el.valStampRight.textContent = `${state.stamp.marginRight}px`;
+      renderMainCanvas();
+    });
+    el.rangeStampTop.addEventListener('input', (e) => {
+      state.stamp.marginTop = Number(e.target.value);
+      el.valStampTop.textContent = `${state.stamp.marginTop}px`;
+      renderMainCanvas();
+    });
+    el.rangeStampSize.addEventListener('input', (e) => {
+      state.stamp.fontSize = Number(e.target.value);
+      el.valStampSize.textContent = `${state.stamp.fontSize}px`;
+      renderMainCanvas();
+    });
+    el.chkStampBorder.addEventListener('change', (e) => {
+      state.stamp.hasBorder = e.target.checked;
+      renderMainCanvas();
+    });
+    el.chkStampBg.addEventListener('change', (e) => {
+      state.stamp.bgFill = e.target.checked;
+      renderMainCanvas();
+    });
+
+    // 差分検出パラメータスライダー
+    el.rangeThreshold.addEventListener('input', (e) => {
+      state.diff.threshold = Number(e.target.value);
+      el.valThreshold.textContent = state.diff.threshold;
+    });
+    el.rangeCluster.addEventListener('input', (e) => {
+      state.diff.clusterRadius = Number(e.target.value);
+      el.valCluster.textContent = `${state.diff.clusterRadius}px`;
+    });
+    el.rangeMinPixels.addEventListener('input', (e) => {
+      state.diff.minPixels = Number(e.target.value);
+      el.valMinPixels.textContent = state.diff.minPixels;
+    });
+    el.rangeOffsetX.addEventListener('input', (e) => {
+      state.diff.offsetX = Number(e.target.value);
+      el.valOffsetX.textContent = `${state.diff.offsetX}px`;
+    });
+    el.rangeOffsetY.addEventListener('input', (e) => {
+      state.diff.offsetY = Number(e.target.value);
+      el.valOffsetY.textContent = `${state.diff.offsetY}px`;
+    });
+    el.btnResetOffset.addEventListener('click', () => {
+      state.diff.offsetX = 0;
+      state.diff.offsetY = 0;
+      el.rangeOffsetX.value = 0;
+      el.rangeOffsetY.value = 0;
+      el.valOffsetX.textContent = '0px';
+      el.valOffsetY.textContent = '0px';
+      if (state.isLoaded) runDiffDetection(true);
+    });
+
+    // エクスポートボタン
+    el.btnExportPNG.addEventListener('click', exportAsPNG);
+    el.btnExportPDF.addEventListener('click', exportAsPDF);
+
+    // キーボードショートカット（Deleteで選択注釈を削除、Escapeでツール解除）
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.key === 'Escape') {
+        setTool('select');
+        closeEditModal();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && state.view.selectedId && state.view.selectedId !== 'stamp') {
+        state.annotations = state.annotations.filter((a) => a.id !== state.view.selectedId);
+        state.view.selectedId = null;
+        renderDiffList();
+        renderMainCanvas();
+      }
+    });
+
+    // リサイズ監視
+    const ro = new ResizeObserver(() => resizeMainCanvas());
+    ro.observe(el.canvasContainer);
+    window.addEventListener('load', () => {
+      resizeMainCanvas();
+    });
+  </script>
+</body>
+</html>
